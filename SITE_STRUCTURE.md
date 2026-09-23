@@ -60,3 +60,17 @@ Role: 難しい言葉の言い換え / 注意喚起 / 「ここだけ覚える�
 - sitemap.xml / robots.txt / 404.html
 - mascot assets: assets/shiba-researcher.webp + assets/shiba-badge.webp
 - homepage features official navigator image and launch article cards
+
+## Editorial trust rules
+- Publishing entity: 大人のスマホAI生活 編集部
+- しば研究員 is a navigator/mascot, not a human expert or public authority.
+- Use primary/official sources for safety, billing, platform settings and product-specific procedures.
+- Show published date + last verified date on every article.
+- Security/scam review cadence: <= 3 months.
+- Other procedural review cadence: <= 6 months.
+- AI may assist research/drafting; important facts are verified before publication.
+- No fake badges, invented experts, invented testing, or unsupported endorsements.
+
+## Scale trigger
+- Keep static HTML while the site remains small and maintainable.
+- Re-evaluate SSG/template generation around 20-30 articles, or earlier if shared-header/footer/article-metadata updates start causing drift.
