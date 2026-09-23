@@ -4,18 +4,22 @@ YouTube「大人のスマホAI生活」と連動し、スマホとAIをやさし
 
 ## URLs
 
-- Production: https://sumaho.rss7.net/ （Lolipop / planned until live verification）
+- Production: https://sumaho.rss7.net/
 - Preview / fallback: https://oosaka0123-sudo.github.io/otona-smart-ai/
 
 ## Deployment
 
-GitHub is the source of truth. Production deployment uses GitHub Actions + lftp over FTPS.
+- GitHub repository `oosaka0123-sudo/otona-smart-ai` is the source of truth.
+- Production is deployed to Lolipop `/sumaho` through the existing private deployment bridge repository.
+- GitHub Pages remains available as preview / fallback.
+- Production deployment verifies HTTPS, the deploy SHA marker, homepage content, and robots/sitemap after upload.
 
-Required repository secrets:
+## Launch baseline
 
-- `LOLIPOP_FTP_SERVER`
-- `LOLIPOP_FTP_USERNAME`
-- `LOLIPOP_FTP_PASSWORD`
-- `LOLIPOP_FTP_SERVER_DIR` — must be exactly `/sumaho`
-
-The production workflow is manual-only until the Lolipop subdomain and secrets are configured and live verification succeeds.
+- Mobile-first static site
+- 5 primary categories
+- 5 launch articles
+- Official navigator: しば研究員
+- sitemap.xml / robots.txt / 404.html
+- canonical / OGP metadata / Article structured data
+- privacy / disclaimer / contact guidance
