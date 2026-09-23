@@ -52,3 +52,11 @@
 ## Brand
 Official navigator: しば研究員
 Role: 難しい言葉の言い換え / 注意喚起 / 「ここだけ覚える」要約。
+
+## Launch baseline (2026-09-24)
+- 5 category pages
+- 5 launch articles
+- canonical production domain: https://sumaho.rss7.net/
+- sitemap.xml / robots.txt / 404.html
+- mascot assets: assets/shiba-researcher.webp + assets/shiba-badge.webp
+- homepage features official navigator image and launch article cards
