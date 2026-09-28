@@ -1,0 +1,55 @@
+name: Deploy to Lolipop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify deployment settings
+        env:
+          FTP_SERVER: ${{ secrets.LOLIPOP_FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.LOLIPOP_FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.LOLIPOP_FTP_PASSWORD }}
+          TARGET_DIR: ${{ secrets.LOLIPOP_FTP_SERVER_DIR }}
+        run: |
+          set -euo pipefail
+          for v in FTP_SERVER FTP_USERNAME FTP_PASSWORD TARGET_DIR; do
+            test -n "${!v:-}" || { echo "::error::$v is not configured"; exit 1; }
+          done
+          test "$TARGET_DIR" = '/sumaho' || { echo "::error::TARGET_DIR must be /sumaho"; exit 1; }
+
+      - name: Install lftp
+        run: sudo apt-get update && sudo apt-get install -y lftp
+
+      - name: Deploy without remote deletion
+        env:
+          FTP_SERVER: ${{ secrets.LOLIPOP_FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.LOLIPOP_FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.LOLIPOP_FTP_PASSWORD }}
+          TARGET_DIR: ${{ secrets.LOLIPOP_FTP_SERVER_DIR }}
+        run: |
+          set -euo pipefail
+          lftp <<LFTP_EOF
+          set cmd:fail-exit true
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ftp:passive-mode true
+          open -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_SERVER"
+          mkdir -p "$TARGET_DIR"
+          cd "$TARGET_DIR"
+          mirror --reverse --verbose=1 --exclude-glob .git/ --exclude-glob .github/ --exclude README.md ./ .
+          bye
+          LFTP_EOF
+
+      - name: Verify production
+        run: |
+          set -euo pipefail
+          curl -4 -fsSI --max-time 20 https://sumaho.rss7.net/ >/dev/null
+          curl -4 -fsS --max-time 20 https://sumaho.rss7.net/ | grep -q '大人のスマホAI生活'
