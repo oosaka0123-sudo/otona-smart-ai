@@ -32,5 +32,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/video/build-episode.ps
 |---|---|
 | `episodes/<回>/audio/Sxx.mp3`（.wav/.m4a） | そのシーンの本番ナレーション（ElevenLabs など）。無ければ Windows TTS の仮音声 |
 | `episodes/<回>/assets/Sxx.png`（.jpg） | そのシーンの背景（実機スクショ・生成画像）。テロップは上に重ねる |
+| `episodes/<回>/assets/Sxx.mp4`（.mov） | そのシーンの画面録画（画像より優先）。上下の帯（タイトル／テロップ）の間に表示し、録画の音は使わない。シーンの長さは「録画」と「ナレーション＋前後の間」の長い方。録画が短いときは最後のコマで止める |
+
+## 下書きと公開用
+
+- 通常（下書き）：仮音声・〔差し替え〕が残っていても書き出す。プレビュー用。
+- `-Release`（公開用）：全シーンに本番音声があり、〔差し替え〕が無いときだけ書き出す。1つでも残っていれば中止し、足りないものを一覧で表示する。`-Only` とは併用できない。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/video/build-episode.ps1 -Release
+```
+
+公開前は、`-Release` で書き出した MP4 を通しで見て、発音・音と画面のずれ・テロップの読みやすさを確認すること（自動では確認できない）。
 
 台本の書式（`## Sxx`、`【テロップ】`、`【テロップ（しば研究員）】`、`ナレーション：`、`〔差し替え…〕`）は `episodes/001-sms-ai-check/script.md` を参照してください。`〔差し替え…〕` の行は読み上げず、画面に「実機撮影後に差し替え」と表示します。

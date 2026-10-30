@@ -21,7 +21,9 @@ param(
   [string[]]$Only = @(),
   [int]$TtsRate = 0,
   [double]$LeadSec = 0.4,
-  [double]$TailSec = 0.8
+  [double]$TailSec = 0.8,
+  # 公開用：仮音声（TTS）・〔差し替え〕・一部シーンだけの書き出しが残っていたら失敗させる
+  [switch]$Release
 )
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -63,6 +65,21 @@ $Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })  # -Fi
 if ($Only.Count -gt 0) { $scenes = @($scenes | Where-Object { $Only -contains $_.Id }) }
 if ($scenes.Count -eq 0) { throw 'シーンが見つかりません（## Sxx 見出しを確認）' }
 
+function Find-SceneFile([string]$sub, [string]$id, [string]$extPattern) {
+  Get-ChildItem (Join-Path $Ep $sub) -File -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -eq $id -and $_.Extension -match $extPattern } | Select-Object -First 1
+}
+$AudioExt = '^\.(wav|mp3|m4a)$'; $ImageExt = '^\.(png|jpe?g)$'; $VideoExt = '^\.(mp4|mov)$'
+
+if ($Release) {
+  $problems = @()
+  if ($Only.Count -gt 0) { $problems += '-Only と -Release は併用できません（全シーンを書き出してください）' }
+  foreach ($s in $scenes) {
+    if ($s.Placeholder) { $problems += "$($s.Id): 〔差し替え〕が残っています" }
+    if (-not (Find-SceneFile 'audio' $s.Id $AudioExt)) { $problems += "$($s.Id): 本番音声 audio/$($s.Id).(wav|mp3|m4a) がありません（仮音声のまま）" }
+  }
+  if ($problems.Count -gt 0) { throw ("公開用の書き出しを中止しました:`n - " + ($problems -join "`n - ")) }
+}
+
 function Get-ReadingText([string]$text) {
   # 長い表記から順に置換（「シャープ9110番」を「9110」より先に）
   foreach ($k in ($dict.Keys | Sort-Object Length -Descending)) { $text = $text.Replace($k, $dict[$k]) }
@@ -81,20 +98,42 @@ function Get-FitFont($g, [string]$text, [string]$family, [float]$size, [float]$m
   return New-Object System.Drawing.Font($family, $min, [System.Drawing.FontStyle]::Bold)
 }
 
-function New-Slide($s, [int]$index, [int]$total, [string]$path) {
+# $bg：背景画像（無ければ無地）。$overlay：画面録画に重ねる透明PNGとして描く
+function New-Slide($s, [int]$index, [int]$total, [string]$path, $bg, [bool]$overlay) {
   $W = 1920; $H = 1080
   $bmp = New-Object System.Drawing.Bitmap($W, $H)
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.SmoothingMode = 'AntiAlias'; $g.TextRenderingHint = 'AntiAliasGridFit'
   $navy = [System.Drawing.Color]::FromArgb(13, 25, 48)
-  $bg = Get-ChildItem (Join-Path $Ep 'assets') -File -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -eq $s.Id -and $_.Extension -match '\.(png|jpe?g)$' } | Select-Object -First 1
-  if ($bg) {
+  if ($overlay) { $g.Clear([System.Drawing.Color]::Transparent) }
+  elseif ($bg) {
     $img = [System.Drawing.Image]::FromFile($bg.FullName)
     $scale = [Math]::Max($W / $img.Width, $H / $img.Height)
     $w = $img.Width * $scale; $h = $img.Height * $scale
     $g.DrawImage($img, ($W - $w) / 2, ($H - $h) / 2, $w, $h); $img.Dispose()
   } else { $g.Clear($navy) }
   $font = 'Yu Gothic'
+  if ($overlay) {
+    # 画面録画は y=170〜800 に表示される（Get-VideoFilter）。上下の帯だけ不透明に描く
+    $navyBrush = New-Object System.Drawing.SolidBrush($navy)
+    $blueB = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(49, 176, 233))
+    $grayB = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(194, 215, 234))
+    $g.FillRectangle($navyBrush, 0, 0, $W, 170); $g.FillRectangle($navyBrush, 0, 800, $W, 280)
+    $fS = New-Object System.Drawing.Font($font, 26)
+    $g.DrawString('大人のスマホAI生活', $fS, $grayB, 110, 20)
+    $g.DrawString(('{0} / {1}' -f $index, $total), $fS, $blueB, 1700, 20)
+    $fT = Get-FitFont $g $s.Title $font 56 32 1500 100
+    $g.FillRectangle($blueB, 90, 70, 12, 80)
+    $g.DrawString($s.Title, $fT, [System.Drawing.Brushes]::White, (New-Object System.Drawing.RectangleF(120, 65, 1500, 100)))
+    $lines = @($s.Telops | Select-Object -First 3)
+    if ($s.Shiba.Count -gt 0) { $lines += ('しば研究員：' + $s.Shiba[0]) }
+    $txt = ($lines | ForEach-Object { $_ -replace '\s+(?=[①-⑳])', "`n" }) -join "`n"
+    $fB = Get-FitFont $g $txt $font 44 24 1680 250
+    $g.DrawString($txt, $fB, [System.Drawing.Brushes]::White, (New-Object System.Drawing.RectangleF(120, 815, 1680, 250)))
+    $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+    foreach ($o in $g, $bmp, $navyBrush, $blueB, $grayB, $fS, $fT, $fB) { $o.Dispose() }
+    return
+  }
   $white = [System.Drawing.Brushes]::White
   $blue = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(49, 176, 233))
   $gray = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(194, 215, 234))
@@ -143,8 +182,9 @@ $concat = @()
 foreach ($s in $scenes) {
   $i++
   $slide = Join-Path $Out "scenes\$($s.Id).png"
-  New-Slide $s $i $scenes.Count $slide
-  $voice = Get-ChildItem (Join-Path $Ep 'audio') -File -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -eq $s.Id -and $_.Extension -match '\.(wav|mp3|m4a)$' } | Select-Object -First 1
+  $rec = Find-SceneFile 'assets' $s.Id $VideoExt
+  New-Slide $s $i $scenes.Count $slide (Find-SceneFile 'assets' $s.Id $ImageExt) ([bool]$rec)
+  $voice = Find-SceneFile 'audio' $s.Id $AudioExt
   if ($voice) { $voicePath = $voice.FullName; $src = 'file' }
   else {
     $voicePath = Join-Path $Out "scenes\$($s.Id)_tts.wav"; $src = 'tts'
@@ -155,7 +195,16 @@ foreach ($s in $scenes) {
   $part = Join-Path $Out "scenes\$($s.Id).mp4"
   $leadMs = [int]($LeadSec * 1000)
   $af = "[1:a]aresample=48000,aformat=channel_layouts=stereo,adelay=${leadMs}|${leadMs},apad=pad_dur=$TailSec[a]"
-  & ffmpeg -hide_banner -loglevel error -y -loop 1 -framerate 30 -i $slide -i $voicePath -filter_complex $af -map 0:v -map '[a]' -shortest -c:v libx264 -preset veryfast -tune stillimage -crf 20 -pix_fmt yuv420p -r 30 -c:a aac -b:a 192k -ar 48000 $part
+  if ($rec) {
+    # 画面録画：録画の音は使わない。シーン長は「録画」と「ナレーション＋前後の間」の長い方。
+    # 録画が短い場合は最後のコマで止め、長い場合はナレーションの後を無音で続ける。
+    $dur = [Math]::Max((Get-Duration $rec.FullName), (Get-Duration $voicePath) + $LeadSec + $TailSec)
+    $vf = "[0:v]fps=30,scale=1920:630:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:170+(630-ih)/2:color=0x0D1930,tpad=stop_mode=clone:stop_duration=3600[bgv];[bgv][2:v]overlay=0:0[v];[1:a]aresample=48000,aformat=channel_layouts=stereo,adelay=${leadMs}|${leadMs},apad[a]"
+    & ffmpeg -hide_banner -loglevel error -y -i $rec.FullName -i $voicePath -loop 1 -framerate 30 -i $slide -filter_complex $vf -map '[v]' -map '[a]' -t $dur -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r 30 -c:a aac -b:a 192k -ar 48000 $part
+    $src = "$src+rec"
+  } else {
+    & ffmpeg -hide_banner -loglevel error -y -loop 1 -framerate 30 -i $slide -i $voicePath -filter_complex $af -map 0:v -map '[a]' -shortest -c:v libx264 -preset veryfast -tune stillimage -crf 20 -pix_fmt yuv420p -r 30 -c:a aac -b:a 192k -ar 48000 $part
+  }
   if ($LASTEXITCODE -ne 0) { throw "ffmpeg failed: $($s.Id)" }
   $d = Get-Duration $part
   $chapters += ('{0}:{1:00} {2}' -f [int][Math]::Floor($t / 60), [int][Math]::Floor($t % 60), $s.Title)
