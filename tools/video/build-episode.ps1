@@ -59,7 +59,7 @@ foreach ($raw in $lines) {
   if ($line -match '^【素材】(.+)$') { $cur.Materials += $Matches[1]; continue }
   if ($line -match '^ナレーション：') { $mode = 'nar'; continue }
   if ($mode -eq 'nar' -and $line -ne '' -and $line -notmatch '^【') {
-    if ($line -match '^〔') { $cur.Placeholder = $true } else { $cur.Narration += $line }
+    if ($line -match '〔') { $cur.Placeholder = $true } else { $cur.Narration += $line }
   }
 }
 $Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })  # -File 経由では "S01,S02" が1文字列になる
