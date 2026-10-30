@@ -71,6 +71,30 @@ function Find-SceneFile([string]$sub, [string]$id, [string]$extPattern) {
 }
 $AudioExt = '^\.(wav|mp3|m4a)$'; $ImageExt = '^\.(png|jpe?g)$'; $VideoExt = '^\.(mp4|mov)$'
 
+# Ordered shots are optional in previews, but required for multi-shot scenes in release.
+# shots.json example: { "S04": [{"file":"S04_01.png","seconds":8}, ...] }
+$ShotMap = @{}
+$ShotManifest = Join-Path $Ep 'shots.json'
+$RequiredMultiShot = @{}
+if ($EpName -eq '001-sms-ai-check') { $RequiredMultiShot = @{ S04 = 3; S06 = 3; S10 = 3 } }
+if (Test-Path $ShotManifest) {
+  $shotData = Get-Content $ShotManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+  foreach ($entry in $shotData.PSObject.Properties) {
+    $id = $entry.Name
+    if ($id -notmatch '^S\d{2}$') { throw "Invalid shot scene: $id" }
+    $items = @($entry.Value)
+    if ($items.Count -eq 0) { throw "Empty shot list: $id" }
+    foreach ($shot in $items) {
+      if ($shot.file -notmatch "^$($id)_\d{2}\.(png|jpe?g|mp4|mov)$") { throw "Invalid shot filename for ${id}: $($shot.file)" }
+      $seconds = 0.0
+      if (-not [double]::TryParse([string]$shot.seconds, [ref]$seconds) -or $seconds -le 0 -or $seconds -gt 300) {
+        throw "Invalid shot duration for ${id}: $($shot.seconds)"
+      }
+    }
+    $ShotMap[$id] = $items
+  }
+}
+
 if ($Release) {
   $problems = @()
   if ($Only.Count -gt 0) { $problems += '-Only と -Release は併用できません（全シーンを書き出してください）' }
@@ -78,7 +102,17 @@ if ($Release) {
     if ($s.Placeholder) { $problems += "$($s.Id): 〔差し替え〕が残っています" }
     if (-not (Find-SceneFile 'audio' $s.Id $AudioExt)) { $problems += "$($s.Id): 本番音声 audio/$($s.Id).(wav|mp3|m4a) がありません（仮音声のまま）" }
     # 【素材】のあるシーンは、実素材（画像または画面録画）が無ければ公開しない
-    if ($s.Materials.Count -gt 0 -and -not (Find-SceneFile 'assets' $s.Id "$ImageExt|$VideoExt")) { $problems += "$($s.Id): 素材 assets/$($s.Id).(png|jpg|mp4|mov) がありません（台本の【素材】：$($s.Materials[0])）" }
+    $hasShots = $ShotMap.ContainsKey($s.Id)
+    if ($RequiredMultiShot.ContainsKey($s.Id) -and (-not $hasShots -or @($ShotMap[$s.Id]).Count -lt $RequiredMultiShot[$s.Id])) {
+      $problems += "$($s.Id): ordered shots.json requires at least $($RequiredMultiShot[$s.Id]) shots"
+    }
+    if ($hasShots) {
+      foreach ($shot in $ShotMap[$s.Id]) {
+        $shotPath = Join-Path (Join-Path $Ep 'assets') $shot.file
+        if (-not (Test-Path -LiteralPath $shotPath -PathType Leaf)) { $problems += "$($s.Id): missing shot assets/$($shot.file)" }
+      }
+    }
+    if ($s.Materials.Count -gt 0 -and -not $hasShots -and -not (Find-SceneFile 'assets' $s.Id "$ImageExt|$VideoExt")) { $problems += "$($s.Id): 素材 assets/$($s.Id).(png|jpg|mp4|mov) がありません（台本の【素材】：$($s.Materials[0])）" }
   }
   if ($problems.Count -gt 0) { throw ("公開用の書き出しを中止しました:`n - " + ($problems -join "`n - ")) }
 }
@@ -128,8 +162,8 @@ function New-Slide($s, [int]$index, [int]$total, [string]$path, $bg, [bool]$over
     $fT = Get-FitFont $g $s.Title $font 56 32 1500 100
     $g.FillRectangle($blueB, 90, 70, 12, 80)
     $g.DrawString($s.Title, $fT, [System.Drawing.Brushes]::White, (New-Object System.Drawing.RectangleF(120, 65, 1500, 100)))
-    $lines = @($s.Telops | Select-Object -First 3)
-    if ($s.Shiba.Count -gt 0) { $lines += ('しば研究員：' + $s.Shiba[0]) }
+    $lines = @($s.Telops | Select-Object -First 1) # one concise caption during screen footage
+    if ($lines.Count -eq 0 -and $s.Shiba.Count -gt 0) { $lines += ('しば研究員：' + $s.Shiba[0]) }
     $txt = ($lines | ForEach-Object { $_ -replace '\s+(?=[①-⑳])', "`n" }) -join "`n"
     $fB = Get-FitFont $g $txt $font 44 24 1680 250
     $g.DrawString($txt, $fB, [System.Drawing.Brushes]::White, (New-Object System.Drawing.RectangleF(120, 815, 1680, 250)))
@@ -182,14 +216,60 @@ function Get-Duration([string]$file) {
   [double](& ffprobe -v error -show_entries format=duration -of csv=p=0 $file)
 }
 
+# Render the ordered shots to a silent 1920x630 strip, then use the existing
+# overlay+voice path for the scene. This preserves original audio isolation.
+function Build-ShotVideo($s) {
+  if (-not $ShotMap.ContainsKey($s.Id)) { return $null }
+  $items = @($ShotMap[$s.Id])
+  $assetDir = Join-Path $Ep 'assets'
+  foreach ($shot in $items) {
+    $src = Join-Path $assetDir $shot.file
+    if (-not (Test-Path -LiteralPath $src -PathType Leaf)) {
+      if ($Release) { throw "Missing ordered shot: $src" }
+      Write-Warning "Draft fallback: missing ordered shot $src"
+      return $null
+    }
+  }
+  $clipList = @()
+  $n = 0
+  foreach ($shot in $items) {
+    $n++
+    $src = Join-Path $assetDir $shot.file
+    $clipName = ('{0}_shot{1:00}.mp4' -f $s.Id, $n)
+    $clip = Join-Path (Join-Path $Out 'scenes') $clipName
+    $duration = ([double]$shot.seconds).ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)
+    $filter = 'scale=1920:630:force_original_aspect_ratio=decrease,pad=1920:630:(ow-iw)/2:(oh-ih)/2:color=0x0D1930,fps=30,setsar=1'
+    if ($shot.file -match '\.(png|jpe?g)$') {
+      & ffmpeg -hide_banner -loglevel error -y -loop 1 -framerate 30 -i $src -t $duration -vf $filter -an -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r 30 $clip
+    } else {
+      & ffmpeg -hide_banner -loglevel error -y -stream_loop -1 -i $src -t $duration -vf $filter -an -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r 30 $clip
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Ordered shot encoding failed: $($s.Id) $($shot.file)" }
+    $clipList += "file '$clipName'"
+  }
+  $scenesDir = Join-Path $Out 'scenes'
+  $listName = "$($s.Id)_shots.txt"
+  [IO.File]::WriteAllLines((Join-Path $scenesDir $listName), $clipList, [Text.Encoding]::ASCII)
+  $combined = Join-Path $scenesDir "$($s.Id)_shots.mp4"
+  Push-Location $scenesDir
+  try {
+    & ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i $listName -c copy $combined
+    if ($LASTEXITCODE -ne 0) { throw "Ordered shot concatenation failed: $($s.Id)" }
+  } finally { Pop-Location }
+  return Get-Item -LiteralPath $combined
+}
+
 # ---------- 4. シーン動画化 ----------
 $report = @(); $chapters = @(); $t = 0.0; $i = 0
 $concat = @()
 foreach ($s in $scenes) {
   $i++
   $slide = Join-Path $Out "scenes\$($s.Id).png"
-  $rec = Find-SceneFile 'assets' $s.Id $VideoExt
+  $rec = Build-ShotVideo $s
+  $shotCount = $(if ($rec) { @($ShotMap[$s.Id]).Count } else { 0 })
+  if (-not $rec) { $rec = Find-SceneFile 'assets' $s.Id $VideoExt }
   $telopPt = New-Slide $s $i $scenes.Count $slide (Find-SceneFile 'assets' $s.Id $ImageExt) ([bool]$rec)
+  if ($Release -and $telopPt -lt 36) { throw "Release blocked: unreadable caption size $telopPt pt in $($s.Id)" }
   $voice = Find-SceneFile 'audio' $s.Id $AudioExt
   if ($voice) { $voicePath = $voice.FullName; $src = 'file' }
   else {
@@ -207,7 +287,7 @@ foreach ($s in $scenes) {
     $dur = [Math]::Max((Get-Duration $rec.FullName), (Get-Duration $voicePath) + $LeadSec + $TailSec)
     $vf = "[0:v]fps=30,scale=1920:630:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:170+(630-ih)/2:color=0x0D1930,tpad=stop_mode=clone:stop_duration=3600[bgv];[bgv][2:v]overlay=0:0[v];[1:a]aresample=48000,aformat=channel_layouts=stereo,adelay=${leadMs}|${leadMs},apad[a]"
     & ffmpeg -hide_banner -loglevel error -y -i $rec.FullName -i $voicePath -loop 1 -framerate 30 -i $slide -filter_complex $vf -map '[v]' -map '[a]' -t $dur -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r 30 -c:a aac -b:a 192k -ar 48000 $part
-    $src = "$src+rec"
+    $src = $(if ($shotCount -gt 0) { "${src}+shots:$shotCount" } else { "${src}+rec" })
   } else {
     & ffmpeg -hide_banner -loglevel error -y -loop 1 -framerate 30 -i $slide -i $voicePath -filter_complex $af -map 0:v -map '[a]' -shortest -c:v libx264 -preset veryfast -tune stillimage -crf 20 -pix_fmt yuv420p -r 30 -c:a aac -b:a 192k -ar 48000 $part
   }

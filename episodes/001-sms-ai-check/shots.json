@@ -1,0 +1,17 @@
+{
+  "S04": [
+    { "file": "S04_01.png", "seconds": 16 },
+    { "file": "S04_02.png", "seconds": 16 },
+    { "file": "S04_03.png", "seconds": 16 }
+  ],
+  "S06": [
+    { "file": "S06_01.mp4", "seconds": 18 },
+    { "file": "S06_02.mp4", "seconds": 18 },
+    { "file": "S06_03.png", "seconds": 12 }
+  ],
+  "S10": [
+    { "file": "S10_01.png", "seconds": 15 },
+    { "file": "S10_02.png", "seconds": 15 },
+    { "file": "S10_03.png", "seconds": 15 }
+  ]
+}
