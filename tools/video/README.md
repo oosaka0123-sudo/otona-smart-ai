@@ -37,11 +37,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/video/build-episode.ps
 ## 下書きと公開用
 
 - 通常（下書き）：仮音声・〔差し替え〕が残っていても書き出す。プレビュー用。
-- `-Release`（公開用）：全シーンに本番音声があり、〔差し替え〕が無いときだけ書き出す。1つでも残っていれば中止し、足りないものを一覧で表示する。`-Only` とは併用できない。
+- `-Release`（公開用）：全シーンに本番音声があり、〔差し替え〕が無く、台本に【素材】があるシーンには `assets/Sxx.*` があるときだけ書き出す。1つでも残っていれば中止し、足りないものを一覧で表示する。`-Only` とは併用できない。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/video/build-episode.ps1 -Release
 ```
+
+`report.txt` の `TelopPt` は、テロップを枠に収めるために縮めた後の文字の大きさです。36未満（`Small` 欄に `!`）のシーンは文言を減らしてください。
+
+スマホアプリの実演シーンには、スマホ実機の撮影素材だけを使います。PC の画面録画で代用しません。
 
 公開前は、`-Release` で書き出した MP4 を通しで見て、発音・音と画面のずれ・テロップの読みやすさを確認すること（自動では確認できない）。
 

@@ -44,7 +44,7 @@ $cur = $null; $mode = ''
 foreach ($raw in $lines) {
   $line = $raw.TrimEnd()
   if ($line -match '^## (S\d{2})\s+(.+?)\s*(（.*）)?$') {
-    $cur = [ordered]@{ Id = $Matches[1]; Title = $Matches[2]; Telops = @(); Shiba = @(); Narration = @(); Placeholder = $false }
+    $cur = [ordered]@{ Id = $Matches[1]; Title = $Matches[2]; Telops = @(); Shiba = @(); Narration = @(); Materials = @(); Placeholder = $false }
     [void]$scenes.Add($cur); $mode = ''; continue
   }
   if ($line -match '^## ') { $cur = $null; $mode = ($(if ($line -match '読み替え') { 'dict' } else { '' })); continue }
@@ -56,6 +56,7 @@ foreach ($raw in $lines) {
   if ($line -match '^---') { $mode = ''; continue }
   if ($line -match '^【テロップ（しば研究員）】(.+)$') { $cur.Shiba += $Matches[1]; continue }
   if ($line -match '^【テロップ】(.+)$') { $cur.Telops += $Matches[1]; continue }
+  if ($line -match '^【素材】(.+)$') { $cur.Materials += $Matches[1]; continue }
   if ($line -match '^ナレーション：') { $mode = 'nar'; continue }
   if ($mode -eq 'nar' -and $line -ne '' -and $line -notmatch '^【') {
     if ($line -match '^〔') { $cur.Placeholder = $true } else { $cur.Narration += $line }
@@ -76,6 +77,8 @@ if ($Release) {
   foreach ($s in $scenes) {
     if ($s.Placeholder) { $problems += "$($s.Id): 〔差し替え〕が残っています" }
     if (-not (Find-SceneFile 'audio' $s.Id $AudioExt)) { $problems += "$($s.Id): 本番音声 audio/$($s.Id).(wav|mp3|m4a) がありません（仮音声のまま）" }
+    # 【素材】のあるシーンは、実素材（画像または画面録画）が無ければ公開しない
+    if ($s.Materials.Count -gt 0 -and -not (Find-SceneFile 'assets' $s.Id "$ImageExt|$VideoExt")) { $problems += "$($s.Id): 素材 assets/$($s.Id).(png|jpg|mp4|mov) がありません（台本の【素材】：$($s.Materials[0])）" }
   }
   if ($problems.Count -gt 0) { throw ("公開用の書き出しを中止しました:`n - " + ($problems -join "`n - ")) }
 }
@@ -131,8 +134,9 @@ function New-Slide($s, [int]$index, [int]$total, [string]$path, $bg, [bool]$over
     $fB = Get-FitFont $g $txt $font 44 24 1680 250
     $g.DrawString($txt, $fB, [System.Drawing.Brushes]::White, (New-Object System.Drawing.RectangleF(120, 815, 1680, 250)))
     $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+    $pt = $fB.Size
     foreach ($o in $g, $bmp, $navyBrush, $blueB, $grayB, $fS, $fT, $fB) { $o.Dispose() }
-    return
+    return $pt
   }
   $white = [System.Drawing.Brushes]::White
   $blue = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(49, 176, 233))
@@ -163,7 +167,9 @@ function New-Slide($s, [int]$index, [int]$total, [string]$path, $bg, [bool]$over
     $shibaBg.Dispose(); $navyBrush.Dispose(); $fShiba.Dispose()
   }
   $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+  $pt = $fTelop.Size
   foreach ($o in $g, $bmp, $blue, $gray, $panel, $fSmall, $fTitle, $fTelop) { $o.Dispose() }
+  return $pt
 }
 
 # ---------- 3. 音声 ----------
@@ -183,7 +189,7 @@ foreach ($s in $scenes) {
   $i++
   $slide = Join-Path $Out "scenes\$($s.Id).png"
   $rec = Find-SceneFile 'assets' $s.Id $VideoExt
-  New-Slide $s $i $scenes.Count $slide (Find-SceneFile 'assets' $s.Id $ImageExt) ([bool]$rec)
+  $telopPt = New-Slide $s $i $scenes.Count $slide (Find-SceneFile 'assets' $s.Id $ImageExt) ([bool]$rec)
   $voice = Find-SceneFile 'audio' $s.Id $AudioExt
   if ($voice) { $voicePath = $voice.FullName; $src = 'file' }
   else {
@@ -208,7 +214,8 @@ foreach ($s in $scenes) {
   if ($LASTEXITCODE -ne 0) { throw "ffmpeg failed: $($s.Id)" }
   $d = Get-Duration $part
   $chapters += ('{0}:{1:00} {2}' -f [int][Math]::Floor($t / 60), [int][Math]::Floor($t % 60), $s.Title)
-  $report += [pscustomobject]@{ Scene = $s.Id; Title = $s.Title; Sec = [Math]::Round($d, 1); Chars = (($s.Narration) -join '').Length; Audio = $src; Placeholder = $s.Placeholder }
+  # TelopPt：テロップが枠に収まるよう縮めた後の大きさ。36未満は読みにくいので文言を減らす目安
+  $report += [pscustomobject]@{ Scene = $s.Id; Title = $s.Title; Sec = [Math]::Round($d, 1); Chars = (($s.Narration) -join '').Length; Audio = $src; Placeholder = $s.Placeholder; TelopPt = $telopPt; Small = $(if ($telopPt -lt 36) { '!' } else { '' }) }
   $t += $d
   $concat += "file 'scenes/$($s.Id).mp4'"
 }
