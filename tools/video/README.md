@@ -37,7 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/video/build-episode.ps
 ## 下書きと公開用
 
 - 通常（下書き）：仮音声・〔差し替え〕が残っていても書き出す。プレビュー用。
-- `-Release`（公開用）：全シーンに本番音声があり、〔差し替え〕が無く、台本に【素材】があるシーンには `assets/Sxx.*` があるときだけ書き出す。1つでも残っていれば中止し、足りないものを一覧で表示する。`-Only` とは併用できない。
+- `-Release`（公開用）：全シーンに本番音声があり、〔差し替え〕が無く、台本に【素材】があるシーンには `assets/Sxx.*` があるときだけ書き出す。第1話は S01〜S14 の全14シーンが正しい順序で存在することも必須。1つでも残っていれば中止し、足りないものを一覧で表示する。`-Only` とは併用できない。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/video/build-episode.ps1 -Release
@@ -70,6 +70,7 @@ S07・S08は**実際のスマホアプリで得た回答**を記録し、台本�
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/video/test-multishot.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/video/test-release-scene-guard.ps1
 ```
 
 テストは合成画像・合成動画・無音音声を一時生成して6シーン（計17カット）を結合し、終了後に削除します。テロップの最小サイズを確保するため、画面録画の上下帯では原則1つの要点のみ表示します。詳細はナレーションと実機映像で伝えてください。

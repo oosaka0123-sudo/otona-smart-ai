@@ -98,6 +98,14 @@ if (Test-Path $ShotManifest) {
 if ($Release) {
   $problems = @()
   if ($Only.Count -gt 0) { $problems += '-Only と -Release は併用できません（全シーンを書き出してください）' }
+  # Do not allow a missing/reordered scene to silently bypass the audio/footage guards.
+  if ($EpName -eq '001-sms-ai-check') {
+    $expectedSceneIds = @(1..14 | ForEach-Object { 'S{0:00}' -f $_ })
+    $actualSceneIds = @($scenes | ForEach-Object { $_.Id })
+    if (($actualSceneIds -join ',') -ne ($expectedSceneIds -join ',')) {
+      $problems += "Episode 001 scene list mismatch: expected $($expectedSceneIds -join ','); got $($actualSceneIds -join ',')"
+    }
+  }
   foreach ($s in $scenes) {
     if ($s.Placeholder) { $problems += "$($s.Id): 〔差し替え〕が残っています" }
     if (-not (Find-SceneFile 'audio' $s.Id $AudioExt)) { $problems += "$($s.Id): 本番音声 audio/$($s.Id).(wav|mp3|m4a) がありません（仮音声のまま）" }
