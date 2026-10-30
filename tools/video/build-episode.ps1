@@ -76,7 +76,7 @@ $AudioExt = '^\.(wav|mp3|m4a)$'; $ImageExt = '^\.(png|jpe?g)$'; $VideoExt = '^\.
 $ShotMap = @{}
 $ShotManifest = Join-Path $Ep 'shots.json'
 $RequiredMultiShot = @{}
-if ($EpName -eq '001-sms-ai-check') { $RequiredMultiShot = @{ S04 = 3; S06 = 3; S10 = 3 } }
+if ($EpName -eq '001-sms-ai-check') { $RequiredMultiShot = @{ S04 = 3; S06 = 3; S07 = 3; S08 = 3; S10 = 3; S11 = 2 } }
 if (Test-Path $ShotManifest) {
   $shotData = Get-Content $ShotManifest -Raw -Encoding UTF8 | ConvertFrom-Json
   foreach ($entry in $shotData.PSObject.Properties) {
