@@ -32,7 +32,12 @@ try {
         $bmp.Save($dest, [System.Drawing.Imaging.ImageFormat]::Png)
         $g.Dispose(); $bmp.Dispose()
       } else {
-        & ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=blue:s=480x800:r=30:d=1' -an -c:v libx264 -pix_fmt yuv420p $dest
+        if ($name -eq 'S06_01.mp4') {
+          # A short red-to-blue recording: when extended to one second, it must freeze on blue, not replay red.
+          & ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=red:s=480x800:r=30:d=0.267' -f lavfi -i 'color=c=blue:s=480x800:r=30:d=0.267' -filter_complex '[0:v][1:v]concat=n=2:v=1:a=0[v]' -map '[v]' -an -c:v libx264 -pix_fmt yuv420p $dest
+        } else {
+          & ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=blue:s=480x800:r=30:d=1' -an -c:v libx264 -pix_fmt yuv420p $dest
+        }
         if ($LASTEXITCODE -ne 0) { throw "Synthetic video failed: $name" }
       }
     }
@@ -43,6 +48,13 @@ try {
   }
   & powershell -NoProfile -ExecutionPolicy Bypass -File tools\video\build-episode.ps1 -EpisodeDir $testEp -Only S04,S06,S07,S08,S10,S11
   if ($LASTEXITCODE -ne 0) { throw "Multi-shot build failed: exit $LASTEXITCODE" }
+  # Check a frame after the short S06_01 recording ends. It must remain blue.
+  $sample = Join-Path $outDir 'freeze-check.png'
+  & ffmpeg -hide_banner -loglevel error -y -ss 0.70 -i "$outDir\scenes\S06_shot01.mp4" -frames:v 1 $sample
+  if ($LASTEXITCODE -ne 0) { throw 'Freeze-frame extraction failed' }
+  $frame = [System.Drawing.Bitmap]::FromFile((Resolve-Path $sample).Path)
+  try { $pixel = $frame.GetPixel(960,315) } finally { $frame.Dispose() }
+  if ($pixel.B -le ($pixel.R + 30)) { throw "Short recording was replayed instead of frozen (R=$($pixel.R), B=$($pixel.B))" }
   $report = Get-Content "$outDir\report.txt" -Raw -Encoding UTF8
   foreach ($id in $expected.Keys) {
     $count = $expected[$id]

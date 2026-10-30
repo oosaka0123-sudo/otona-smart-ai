@@ -242,7 +242,9 @@ function Build-ShotVideo($s) {
     if ($shot.file -match '\.(png|jpe?g)$') {
       & ffmpeg -hide_banner -loglevel error -y -loop 1 -framerate 30 -i $src -t $duration -vf $filter -an -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r 30 $clip
     } else {
-      & ffmpeg -hide_banner -loglevel error -y -stream_loop -1 -i $src -t $duration -vf $filter -an -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r 30 $clip
+      # Do not replay smartphone gestures when a recording is shorter than its allocated shot.
+      # Hold the final frame instead; -t still trims clips longer than the shot.
+      & ffmpeg -hide_banner -loglevel error -y -i $src -t $duration -vf "$filter,tpad=stop_mode=clone:stop_duration=300" -an -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r 30 $clip
     }
     if ($LASTEXITCODE -ne 0) { throw "Ordered shot encoding failed: $($s.Id) $($shot.file)" }
     $clipList += "file '$clipName'"
